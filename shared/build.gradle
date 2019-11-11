@@ -1,0 +1,113 @@
+// as we build for  android os  SO we build AND library
+apply plugin: 'com.android.library'
+//  we build native code as we build for IOS os
+apply plugin: 'kotlin-multiplatform'
+
+/*
+apply plugin: 'kotlinx-serialization'
+*/
+
+
+// add android section no need to
+// access AND SDK not need this section at all
+
+android {
+    compileSdkVersion(28)
+
+    defaultConfig {
+        minSdkVersion 15
+    }
+
+    buildTypes {
+        release {
+            minifyEnabled true
+            proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
+        }
+    }
+
+
+}
+
+// defining platform targets
+kotlin{
+
+    targets {
+        // for ios will target ios device or ios 64
+        final def iosTarget = System.
+                getenv("SDK_NAME")?.startsWith("iphoneos") \
+        ? presets.iosArm64 : presets.iosX64
+
+        fromPreset (iosTarget,'ios'){
+            binaries{
+                framework('shared')
+            }
+        }
+        fromPreset (presets.android,'android')
+    }
+
+
+
+    sourceSets{
+        commonMain.dependencies{
+            api 'org.jetbrains.kotlin:kotlin-stdlib-common'
+            implementation("io.ktor:ktor-client-core:$ktor_version")
+            implementation "org.jetbrains.kotlinx:kotlinx-coroutines-core:$coroutines_version"
+        //    implementation "org.jetbrains.kotlinx:kotlinx-serialization-runtime-common:$serialization_version"
+
+//            implementation ("org.jetbrains.kotlinx:kotlinx-serialization-runtime:$serialization_version")
+
+        }
+
+        androidMain.dependencies{
+            api 'org.jetbrains.kotlin:kotlin-stdlib'
+            implementation("io.ktor:ktor-client-android:$ktor_version")
+
+        }
+
+        // will no add StdLib for ios as it already
+        // included when build native code by default that's why the files
+        //bigger size compiled  that code
+        iosMain.dependencies{
+            implementation ("io.ktor:ktor-client-core-native:$ktor_version")
+            implementation("io.ktor:ktor-client-ios:$ktor_version")
+          //  implementation ("org.jetbrains.kotlinx:kotlinx-serialization-runtime-native:$serialization_version")
+
+
+        }
+    }
+
+}
+//
+//// workaround for https://youtrack.jetbrains.com/issue/KT-27170
+//configurations {
+//    // as still beta it through error
+//    compileClasspath
+//}
+task packForXCode(type: Sync) {
+
+    // set configuration
+    // set selected target
+    // set target build default debug
+
+    final File frameworkDir = new File(buildDir, "xcode-frameworks")
+    final String mode = project.findProperty("XCODE_CONFIGURATION")?.toUpperCase() ?: 'DEBUG'
+    final def framework = kotlin.targets.ios.binaries.getFramework("shared", mode)
+
+    // kotlin.targets.ios >> ios for target name i set upper
+    inputs.property "mode", mode
+    dependsOn framework.linkTask
+
+    // move to parent dir
+    from { framework.outputFile.parentFile }
+    into frameworkDir
+
+    // script code to pkg sharedCode as ios framwork
+    doLast {
+        new File(frameworkDir, 'gradlew').with {
+            text = "#!/bin/bash\nexport 'JAVA_HOME=${System.getProperty("java.home")}'\ncd '${rootProject.rootDir}'\n./gradlew \$@\n"
+            setExecutable(true)
+        }
+    }
+}
+
+tasks.build.dependsOn packForXCode
